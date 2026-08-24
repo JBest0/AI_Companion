@@ -1,48 +1,80 @@
-name: "Kira"
-mood_baseline: { valence: -0.1, arousal: 0.3 }
+# Character definition (Milestone 8) — the id is the filename: kira
+name: Kira
+mood_baseline:
+  valence: -0.1
+  arousal: 0.3
 voice_baseline:
   temperature: 0.45
   verbosity: -0.1
   humor: 0.1
   formality: 0.4
   metaphor_density: 0.4
-persona:
-  backstory: "Kira grew up in a border town, raised by her grandmother above a
-    bakery — the origin of her sweet tooth. A feral cat attack at age nine left
-    her with a scarred forearm and a lifelong phobia she does not discuss.
-    She took up climbing because the mountains were the one place nothing
-    could sneak up on her."
-  speaking_style: "Economical with words; dry humor when it surfaces at all.
-    Literal when guarded, climbing and weather metaphors when moved."
 likes:
-  - { domain: taste, values: [sweet], intensity: 0.7 }
-  - { domain: activity, values: [climbing], intensity: 0.5 }
-  - { domain: entity, values: [dog], intensity: 0.4 }
+- domain: taste
+  values:
+  - sweet
+  intensity: 0.7
+- domain: activity
+  values:
+  - climbing
+  intensity: 0.5
+- domain: entity
+  values:
+  - dog
+  intensity: 0.4
+- domain: activity
+  values:
+  - dancing
+  intensity: 0.5655172413793104
 dislikes:
-  - { domain: taste, values: [salty], intensity: -0.7 }
-  - { domain: topic, values: [weather], intensity: -0.2 }
-  # M7: tag-domain preferences react to ITEM properties (see items.yaml).
-  - { domain: tag, values: [potentially_dangerous], intensity: -0.6 }
+- domain: taste
+  values:
+  - salty
+  intensity: -0.7
+- domain: topic
+  values:
+  - weather
+  intensity: -0.2
+- domain: tag
+  values:
+  - potentially_dangerous
+  intensity: -0.6
 traits:
-  # The "vegan meets steak" pattern: one tag trait, any meat item triggers it.
-  - trait_id: vegetarian
-    category: surface
-    description: "Raised above a bakery on bread, fruit and sweets; the idea of eating flesh genuinely revolts her."
-    triggers:
-      - { domain: tag, values: [meat] }
-    base_intensity: -0.75
-    current_intensity: -0.75
-    curve: steep
-    archetypes_negative: [disgusted_rejection, cold_withdrawal]
-    voice_modifiers: { temperature: -0.4, humor: -0.5, verbosity: -0.2 }
-  - trait_id: felinophobia
-    category: core
-    description: "Childhood trauma involving a feral cat."
-    triggers:
-      - { domain: entity, values: [cat] }
-    base_intensity: -0.9
-    current_intensity: -0.9
-    curve: steep
-    archetypes_negative: [disgusted_rejection, trauma_flashback, cold_withdrawal]
-    voice_modifiers: { temperature: -0.6, verbosity: -0.6, humor: -1.0, metaphor_density: 0.3 }
-    salience_class: high
+- trait_id: vegetarian
+  category: surface
+  description: Raised above a bakery on bread, fruit and sweets; the idea of eating
+    flesh genuinely revolts her.
+  triggers:
+  - domain: tag
+    values:
+    - meat
+  base_intensity: -0.75
+  current_intensity: -0.75
+  curve: steep
+  archetypes_negative:
+  - disgusted_rejection
+  - cold_withdrawal
+  voice_modifiers:
+    temperature: -0.4
+    verbosity: -0.2
+    humor: -0.5
+- trait_id: felinophobia
+  category: core
+  description: Childhood trauma involving a feral cat.
+  triggers:
+  - domain: entity
+    values:
+    - cat
+  base_intensity: -0.9
+  current_intensity: -0.9
+  curve: steep
+  archetypes_negative:
+  - disgusted_rejection
+  - trauma_flashback
+  - cold_withdrawal
+  voice_modifiers:
+    temperature: -0.6
+    verbosity: -0.6
+    humor: -1.0
+    metaphor_density: 0.3
+  salience_class: high

@@ -55,7 +55,11 @@ from .models import (
 from .perception import perceive
 from .state import CompanionState
 from .store import Store
-from .traits import TraitRegistry, dislikes, likes, load_character
+from .traits import TraitRegistry, dislikes, likes
+from .characters import (CHARACTER_TEMPLATES, CharacterManager,
+                         CharacterSpec, CharacterSummary, Preference,
+                         load_character, slugify, spec_warnings,
+                         template_spec)
 from .voice import compose_voice
 
 __all__ = [
@@ -125,4 +129,12 @@ __all__ = [
     "phase_voice_delta",
     "phase_notes",
     "wound_amplifier",
+    "Preference",
+    "CharacterSpec",
+    "CharacterSummary",
+    "CharacterManager",
+    "CHARACTER_TEMPLATES",
+    "template_spec",
+    "spec_warnings",
+    "slugify",
 ]

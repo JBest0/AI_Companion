@@ -1,6 +1,4 @@
-import yaml
-
-from .models import AffectState, Stimulus, Trait, TraitCategory, Trigger, VoiceProfile, voice_delta
+from .models import Stimulus, Trait, Trigger
 
 
 def likes(
@@ -70,35 +68,3 @@ class TraitRegistry:
             if r > 0:
                 out.append((t, r))
         return out
-
-
-def load_character(path) -> dict:
-    with open(path, encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-
-    mood = data.get("mood_baseline")
-    mood_baseline = AffectState(**mood) if mood else AffectState()
-
-    voice = data.get("voice_baseline")
-    voice_baseline = VoiceProfile(**voice) if voice else VoiceProfile()
-
-    registry: list[Trait] = []
-    for entry in data.get("likes", []) or []:
-        registry.append(likes(entry["domain"], *entry["values"], intensity=entry["intensity"]))
-    for entry in data.get("dislikes", []) or []:
-        registry.append(dislikes(entry["domain"], *entry["values"], intensity=entry["intensity"]))
-    for entry in data.get("traits", []) or []:
-        t = dict(entry)
-        if isinstance(t.get("voice_modifiers"), dict):
-            t["voice_modifiers"] = voice_delta(**t["voice_modifiers"])
-        if isinstance(t.get("category"), str):
-            t["category"] = TraitCategory(t["category"])
-        registry.append(Trait(**t))
-
-    return {
-        "name": data["name"],
-        "mood_baseline": mood_baseline,
-        "voice_baseline": voice_baseline,
-        "registry": registry,
-        "persona": data.get("persona", {}),
-    }

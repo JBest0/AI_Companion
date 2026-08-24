@@ -4,14 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project state
 
-**Milestones 1–7 are complete and verified**: 93 tests pass, `demo.py` output matches the contract in `IMPLEMENTATION_GUIDE_M7.md` §5, and `reflect.py` behaves per `IMPLEMENTATION_GUIDE_M4.md` §6. The guide is the authoritative, final spec — every decision in it is fixed. Do not invent alternatives, add features, rename things, or leave TODOs. If something is unspecified, it is out of scope.
+**Milestones 1–8 are complete and verified**: 103 tests pass, `demo.py` output matches the contract in `IMPLEMENTATION_GUIDE_M7.md` §5, `reflect.py` behaves per `IMPLEMENTATION_GUIDE_M4.md` §6, and the M8 character manager + creator are covered by `tests/test_characters.py` and `tests/test_config.py`. The guide is the authoritative, final spec — every decision in it is fixed. Do not invent alternatives, add features, rename things, or leave TODOs. If something is unspecified, it is out of scope.
+
+**Not a web app — permanently.** This is a local, single-process, single-user desktop application. A web app is impossible by design, not by effort: exactly one live session per process with a server-global active character (M8 lock: no multi-user, no per-tab active character, no auth), all state is local files at fixed paths, and the GUI is a native Tkinter process. The web path (`server.py`, `web/`, `refresh_server.py`) was **deleted** — there is no server to run. `gui.py` is the GUI and the character creator; `companion/config.py` is the provider/config layer. See `NO_WEB_APP.md`. This supersedes M8 §7's "creator is web-GUI-only" line.
 
 ## Commands
 
 Run from the project root (`C:\Users\Administrator\Documents\AI_Companion`):
 
 ```bash
-python -m pytest tests/ -q          # full suite (must stay at 93 passed)
+python -m pytest tests/ -q          # full suite (must stay at 103 passed)
 python -m pytest tests/test_core.py -k test_trust_buffer -q   # single M1 test
 python -m pytest tests/test_memory.py -k test_cross_session_recall -q   # single M2 test
 python -m pytest tests/test_methods.py -k test_vacuum_fill -q   # single M3 test
@@ -19,6 +21,7 @@ python -m pytest tests/test_harness.py -k test_fallback_counts -q   # single M3.
 python -m pytest tests/test_reflection.py -k test_mock_finds_recurrence -q   # single M4 test
 python -m pytest tests/test_dynamics.py -k test_wound_amplifier -q   # single M5 test
 python demo.py                      # six-session demo (sessions 1-5 identity-proof M5; session 6 exercises items & tags); writes companion.db in root
+python gui.py                       # Tkinter GUI + character creator; writes companion.db in root
 python chat.py                      # interactive REPL; writes companion.db in root
 python golden.py                    # DeepSeek golden-scenario check; needs DEEPSEEK_API_KEY
 python reflect.py --log             # view applied reflection log
@@ -29,7 +32,7 @@ Notes:
 - The environment is Python 3.14 (the guide targets 3.12; the code uses 3.12+ syntax and runs cleanly on 3.14).
 - Only dependencies: `pydantic` v2, `pyyaml`, `pytest`. Nothing else (unless a later milestone adds it).
 - `demo.py` creates a fresh `companion.db` on first run; delete `companion.db*` to re-test the demo from a clean state. The expected demo values only hold on a fresh database.
-- API keys can be placed in a `.env` file (copy `.env.example`) or exported directly. `chat.py` and `golden.py` load `.env` automatically via `companion.env.load_dotenv()`. Environment variables take precedence over `.env` values.
+- API keys can be placed in a `.env` file (copy `.env.example`) or exported directly. `gui.py`, `chat.py` and `golden.py` load `.env` automatically via `companion.env.load_dotenv()` (also called by `companion/config.py` at import). Environment variables take precedence over `.env` values.
 - `openai` is optional and only imported lazily inside `OpenAILLM` / `golden.py`. With no `OPENAI_API_KEY`, `default_llm()` returns `MockLLM` (deterministic — always used by tests/demo).
 
 ## Architecture
@@ -75,10 +78,11 @@ The layers:
 6. **Reflection** — `companion/reflection.py` + `reflect.py`.
    - `companion/reflection.py`: validators and `apply_proposal()` enforce the safety bounds (drift caps, core lock, source/session floors). `MockReflector` is the offline default; `DeepSeekReflector` calls `deepseek-v4-flash` when `DEEPSEEK_API_KEY` is set.
    - `reflect.py`: audit log viewer and rollback CLI for applied reflections.
-7. **Harness / interface** — `chat.py` + `golden.py`.
+7. **Harness / interface** — `gui.py` + `chat.py` + `golden.py`.
+   - `gui.py`: the only GUI — a Tkinter window (dashboard | chat | inspector) driven by a worker thread + `queue.Queue`, plus the in-window character creator (create / edit / duplicate / archive / purge) via `CharacterEditor`. Switching characters applies M8's "restart as new" semantics when a saved instance predates its edited definition.
    - `chat.py`: interactive REPL that hydrates/creates a session, prints trace summaries, and persists state.
    - `golden.py`: pre-flight check replaying the betrayal cascade against the real DeepSeek model (`deepseek-chat` via the `openai` client) on a fresh `golden.db` with companion id `golden-kira`.
-8. **Persistence & LLM adapter** — `store.py` (stdlib `sqlite3`, WAL; four tables: `companion_state`, `turn_traces`, `memories`, `reflection_log`) and `llm.py` (`LLM` Protocol; `MockLLM` default; `OpenAILLM` lazily imports `openai`, model `gpt-4o-mini`).
+8. **Persistence & LLM adapter** — `store.py` (stdlib `sqlite3`, WAL; four tables: `companion_state`, `turn_traces`, `memories`, `reflection_log`) and `llm.py` (`LLM` Protocol; `MockLLM` default; `OpenAILLM` lazily imports `openai`, model `gpt-4o-mini`). **Provider/config** lives in `companion/config.py` (was `server.py`): `load_config`/`save_config` (config.json holds provider/model/base_url/active_character), `build_llm`, `config_warning`, and `_OpenAICompatLLM`. API keys always come from the environment (`.env`), never config.json.
 
 Key invariants:
 - **Exactly one LLM call per turn** (only for valid turns), behind the `LLM` Protocol.
@@ -99,7 +103,7 @@ Key invariants:
 
 ## Integration points for future milestones (do not implement yet)
 
-The M4 guide's §9 lists non-goals: memory consolidation/demotion/deletion of episodes, reflection-triggered methods or proactive outreach, numeric contracts for the DeepSeekReflector path (only MockReflector is contract-tested), and changes to any M1–M3 constant. The M3.5 guide's §8 non-goals still stand: output filter / regeneration loop, streaming responses, web UI, multi-user support, and persona-driven trait derivation (backstory is prose, not parsed). The M3 non-goals still stand: implicit method parsing from free text, methods that close sessions (`/leave` is a stimulus, not a session command), per-companion method registries, sentiment alignment for targeted methods, phase-shift announcements, and new relationship dimensions. The M2 non-goals still stand: second-pass retrieval on the draft response, setting `activation.suppress` (the field exists and retrieval honors it, but nothing produces it yet), an LLM-based memory writer, vector databases/ANN indexes/embedding caches, and changes to `constraint.py` formulas or M1 constants. Also still future: an LLM perception classifier.
+The M4 guide's §9 lists non-goals: memory consolidation/demotion/deletion of episodes, reflection-triggered methods or proactive outreach, numeric contracts for the DeepSeekReflector path (only MockReflector is contract-tested), and changes to any M1–M3 constant. The M3.5 guide's §8 non-goals still stand: output filter / regeneration loop, streaming responses, web UI, multi-user support, and persona-driven trait derivation (backstory is prose, not parsed). (Web UI and multi-user support are no longer mere non-goals — the web path was deleted and they are permanently ruled out; see the "Not a web app" section above.) The M3 non-goals still stand: implicit method parsing from free text, methods that close sessions (`/leave` is a stimulus, not a session command), per-companion method registries, sentiment alignment for targeted methods, phase-shift announcements, and new relationship dimensions. The M2 non-goals still stand: second-pass retrieval on the draft response, setting `activation.suppress` (the field exists and retrieval honors it, but nothing produces it yet), an LLM-based memory writer, vector databases/ANN indexes/embedding caches, and changes to `constraint.py` formulas or M1 constants. Also still future: an LLM perception classifier.
 
 ## Naming
 

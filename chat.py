@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 
 from companion import (
+    CharacterManager,
     CompanionSession,
     CompanionState,
     Store,
@@ -29,6 +30,7 @@ def load_session(character: str, db_path: str) -> CompanionSession:
             affect_baseline=char["mood_baseline"],
             backstory=char.get("persona", {}).get("backstory", ""),
             speaking_style=char.get("persona", {}).get("speaking_style", ""),
+            definition_hash=char["definition_hash"],   # M8
         )
     items_file = ROOT / "items.yaml"
     items = load_items(items_file) if items_file.exists() else None
@@ -57,12 +59,47 @@ def format_trace(trace) -> str:
 def main(argv=None):
     load_dotenv()
     argv = argv if argv is not None else sys.argv[1:]
-    character = argv[0] if argv else "kira"
     db_path = "./companion.db"
     if "--db" in argv:
         idx = argv.index("--db")
         if idx + 1 < len(argv):
             db_path = argv[idx + 1]
+
+    manager = CharacterManager(ROOT / "characters", Store(db_path))
+
+    if "--list" in argv:
+        for c in manager.list(include_archived=False):
+            status = "met" if c.has_save else "new"
+            flag = "" if c.valid else f"  INVALID: {c.load_error}"
+            print(f"{c.char_id:20} {c.name:20} {status}{flag}")
+        return
+
+    positional = [a for a in argv if not a.startswith("--")
+                  and a != db_path]
+    character = positional[0] if positional else None
+    if character is None:
+        chars = [c for c in manager.list(include_archived=False) if c.valid]
+        if not chars:
+            print("no characters found in characters/ — create one in the "
+                  "GUI (python gui.py) or add a YAML file.")
+            return
+        if len(chars) == 1:
+            character = chars[0].char_id
+        else:
+            for i, c in enumerate(chars, 1):
+                print(f"  {i}. {c.name} ({c.char_id})")
+            try:
+                choice = input("talk to [1]: ").strip() or "1"
+            except EOFError:
+                return
+            if choice.isdigit() and 1 <= int(choice) <= len(chars):
+                character = chars[int(choice) - 1].char_id
+            else:
+                character = choice
+    if not manager.exists(character):
+        print(f"no character named {character!r}; "
+              f"have: {', '.join(c.char_id for c in manager.list(False))}")
+        return
 
     session = load_session(character, db_path)
     gap = session.open()

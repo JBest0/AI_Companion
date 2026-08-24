@@ -79,6 +79,7 @@ def main():
             affect_baseline=char["mood_baseline"],
             backstory=char.get("persona", {}).get("backstory", ""),
             speaking_style=char.get("persona", {}).get("speaking_style", ""),
+            definition_hash=char["definition_hash"],   # M8
         )
 
     def get_session(items=None):

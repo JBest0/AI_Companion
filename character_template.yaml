@@ -1,0 +1,325 @@
+# =============================================================================
+# character_template.yaml
+#
+# HOW TO AUTHOR A COMPANION CHARACTER FOR THE AI_COMPANION ENGINE
+#
+# This file is the template an AI agent reads BEFORE writing a new character.
+# The agent's deliverable is one YAML file:  characters/<char_id>.yaml
+#
+# The engine model: personality is deterministic CODE. The LLM only renders
+# the reaction the constraint engine has already decided — it never decides
+# one itself. So a character is purely a spec of preferences and traits; there
+# is no other place for personality to live. The agent's job is to declare
+# "what fires and how hard", not to narrate behavior.
+#
+# There is no compile step: a character file is loaded by the GUI
+# (python gui.py) or the REPL (python chat.py) directly. A malformed file is
+# flagged in the GUI (offered for purge), never silently accepted.
+# =============================================================================
+
+meta:
+  format: "character authoring template"
+  version: 1
+  output: "characters/<char_id>.yaml"      # one file per character
+  char_id_rule: "^[a-z][a-z0-9_-]{1,31}$"  # == filename stem == companion_id
+
+# ---------------------------------------------------------------------------
+# RULES — read these first. They are the instructions, the schema below is
+# just the field reference.
+# ---------------------------------------------------------------------------
+rules:
+  - "The filename is the identity. characters/<char_id>.yaml -> char_id must
+     start with a lowercase letter and contain only [a-z0-9_-], 2-32 chars.
+     It becomes the companion_id and the /switch target. Pick it once; a
+     rename is duplicate + archive, not a filename edit."
+  - "Declare every reaction. The engine reacts ONLY through the traits your
+     likes/dislikes/traits produce. If a stimulus is not declared, the
+     character has no opinion and the reaction is neutral. Never rely on the
+     LLM to infer personality — it renders, it does not decide."
+  - "Prefer the likes:/dislikes: shorthand for simple one-trigger preferences.
+     Each entry auto-generates a trait. Use an explicit traits: entry only
+     when you need: multiple trigger domains on one reaction, a non-linear
+     curve, an archetype override, voice modifiers, or a high salience class."
+  - "Trigger values must match exactly what produces the stimulus. Matching is
+     exact word-boundary against the lexicon and the items.yaml inventory (see
+     reference below). 'likes taste:sweety' will never fire; 'likes
+     taste:sweet' will, because 'chocolate', 'cake', 'honey' etc. all emit
+     taste:sweet. Values are lowercase snake_case, or '*' for wildcard."
+  - "Wildcards are the exception. '*: *' makes every stimulus hit the trait.
+     Use the domain wildcard (e.g. domain: tag, values: ['*']) sparingly —
+     a trait that fires on everything is a personality, not a preference."
+  - "Intensity is the volume knob. Sign = like (+) / dislike (-), magnitude =
+     strength of the reaction. Keep magnitudes under ~0.8 unless the reaction
+     is identity-defining; the trust buffer, wound amplifier and phase
+     thresholds amplify extremes."
+  - "One trait per distinct reaction. A character with one trait that reacts
+     to ten unrelated things is unreadable and the archetype/voice overrides
+     will fight each other. Split into focused traits with their own triggers."
+  - "category: core is for immutable identity. Core traits can never drift
+     (current_intensity is structurally forced to equal base_intensity).
+     Surface traits are ordinary preferences and may drift under reflection.
+     In a definition file, current_intensity MUST equal base_intensity for
+     every trait — drift is the engine's job, not the author's."
+  - "Persona prose is flavor, not logic. backstory and speaking_style are
+     injected verbatim into the system prompt before the archetype line; the
+     LLM reads them for tone, the engine never parses them. Write a sentence
+     or two that a good actor could perform, not a spec."
+  - "curve: threshold means the trigger is all-or-nothing (no impact below
+     |0.3|); curve: steep sharpens small intensities. Default linear is fine
+     for most traits."
+  - "Do not invent new domains, curves, or machinery. The schema and valid
+     value sets below are closed. In particular 'social' is a reserved domain
+     (the engine adds method valence there itself) — never author a trait on
+     it, or the method impact double-counts."
+  - "A same-name file plus an existing saved companion is a definition change,
+     not a silent migration. The GUI will ask Keep talking / Restart as new
+     when the stored definition_hash differs from the file. That is by design."
+
+# ---------------------------------------------------------------------------
+# SCHEMA — every field, its bounds, and its meaning.
+# ---------------------------------------------------------------------------
+schema:
+  name:
+    required: true
+    bounds: "1-40 characters (whitespace-trimmed)"
+    note: "Display name only. Independent of char_id."
+  avatar:
+    default: ""
+    bounds: "optional single emoji, <= 8 codepoints, no whitespace"
+    note: "Shown in the GUI character picker. Omit for none."
+  mood_baseline:
+    valence:
+      bounds: "[-1.0, 1.0]"
+      default: 0.0
+      note: "Resting emotional state. Negative = melancholic/guarded."
+    arousal:
+      bounds: "[0.0, 1.0]"
+      default: 0.2
+      note: "Resting energy/alertness. High = excitable."
+  voice_baseline:
+    temperature:
+      bounds: "[0.0, 1.0]"
+      default: 0.5
+      note: "LLM sampling heat. Low = terse/dry, high = loose."
+    verbosity:
+      bounds: "[-1.0, 1.0]"
+      default: 0.0
+      note: "Negative = terse, positive = wordy."
+    humor:
+      bounds: "[-1.0, 1.0]"
+      default: 0.0
+      note: "Negative = dry/serious, positive = playful."
+    formality:
+      bounds: "[0.0, 1.0]"
+      default: 0.5
+      note: "High = formal register."
+    metaphor_density:
+      bounds: "[0.0, 1.0]"
+      default: 0.2
+      note: "How figurative the voice is."
+  persona:
+    backstory:
+      default: ""
+      bounds: "<= 4000 chars"
+      note: "Injected verbatim into the system prompt. Prose flavor only."
+    speaking_style:
+      default: ""
+      bounds: "<= 4000 chars"
+      note: "Injected verbatim into the system prompt. Prose flavor only."
+  likes:
+    default: "[]"
+    note: "list of Preference entries (see below). Intensity > 0."
+  dislikes:
+    default: "[]"
+    note: "list of Preference entries (see below). Intensity < 0."
+  traits:
+    default: "[]"
+    note: "list of Trait entries (see below). Only for the richer cases."
+
+# -- Preference entry (an element of likes:/dislikes:) -----------------------
+preference:
+  domain:
+    required: true
+    values: "one of the AUTHORABLE domains in reference.domains"
+    note: "'social' is forbidden."
+  values:
+    required: true
+    note: "non-empty list of lowercase snake_case tokens or '*'; exact-match
+           triggers (they only fire if the stimulus produces this value)."
+  intensity:
+    required: true
+    bounds: "[-1.0, 1.0], non-zero; > 0 for likes, < 0 for dislikes"
+    note: "Sign encodes like/dislike. A like with negative intensity fails."
+
+# -- Trait entry (an element of traits:) -------------------------------------
+trait:
+  trait_id:
+    required: true
+    rule: "^[a-z][a-z0-9_]{0,39}$"
+    note: "lowercase snake_case, unique across the file (including the
+           auto-generated likes_/dislikes_ ids)."
+  category:
+    values: ["surface", "core"]
+    default: surface
+    note: "core = immutable identity (current_intensity locked == base)."
+  description:
+    default: ""
+    note: "Shown in the prompt so the LLM can render the reaction faithfully."
+  triggers:
+    required: true
+    note: "list of {domain, values[]}; a trigger fires when ANY stimulus
+           matches (same domain AND any listed value, '*' matches all)."
+  base_intensity:
+    required: true
+    bounds: "[-1.0, 1.0]"
+  current_intensity:
+    required: true
+    bounds: "[-1.0, 1.0]"
+    note: "MUST equal base_intensity in a definition (drift is reflection's)."
+  curve:
+    values: ["linear", "steep", "threshold"]
+    default: linear
+    note: "threshold = all-or-nothing below |0.3|; steep = sqrt sharpening."
+  archetypes_positive:
+    default: "[]"
+    note: "lowercase snake_case names. When this trait dominates a positive
+           net impact, its first entry overrides the band archetype."
+  archetypes_negative:
+    default: "[]"
+    note: "same, for a dominant negative impact (e.g. disgusted_rejection,
+           cold_withdrawal, trauma_flashback)."
+  voice_modifiers:
+    default: "all 0.0"
+    note: "VoiceProfile deltas applied while this trait fires — same five
+           fields as voice_baseline, each a delta in the field's range."
+  salience_class:
+    values: ["low", "medium", "high"]
+    default: medium
+    note: "high-salience memories weigh more at retrieval; high is also what
+           the wound amplifier looks for (pain/fear)."
+
+# ---------------------------------------------------------------------------
+# REFERENCE — the closed value sets the agent may use.
+# ---------------------------------------------------------------------------
+reference:
+  domains:
+    authorable: ["taste", "entity", "activity", "topic",
+                 "tag", "item", "category", "action", "*"]
+    reserved: ["social"]
+    note: "taste/entity/activity/topic fire from the lexicon; tag/item/category
+           fire from items.yaml; action fires from slash-methods; '*' is a
+           wildcard. 'social' is reserved — the engine adds method valence
+           there internally, never author on it."
+  curves: ["linear", "steep", "threshold"]
+  salience_classes: ["low", "medium", "high"]
+  trait_categories: ["surface", "core"]
+  archetypes:
+    band: "decided from net impact: delight (> +0.7), warm_positive (> +0.3),
+           neutral (> -0.3), mild_dislike (> -0.7), severe_negative (<= -0.7)."
+    trait_overrides: "any lowercase snake_case name is valid; used to pin a
+           reaction (examples in the shipped characters: disgusted_rejection,
+           cold_withdrawal, trauma_flashback)."
+  lexicon:
+    note: "word-boundary keyword match on the user's text; this is what turns
+           prose into stimuli. Author trigger VALUES from this vocabulary so
+           they can actually fire."
+    taste_sweet: ["chocolate cake", "chocolate", "candy", "cake", "honey", "sweet"]
+    taste_salty: ["pretzel", "chips", "salty"]
+    entity_cat: ["cat", "kitten"]
+    entity_dog: ["dog"]
+    entity_spider: ["spider"]
+    activity_climbing: ["climbing", "mountain"]
+    topic_weather: ["rain"]
+  items:
+    note: "Full inventory lives in items.yaml (ids, categories, flat tags,
+           aliases). A mentioned item or '/gift <id>' emits item:<id>,
+           tag:<tag>, and category:<category> stimuli. Read items.yaml when
+           choosing tag/item/category triggers. Example category values:
+           food, drink, toy, weapon, tool, clothing, container, material,
+           lighting, writing, medical, currency, instrument, misc. Example
+           tags: sweet, savory, meat, soft, comforting, cute,
+           potentially_dangerous, warm, durable, common."
+  methods:
+    note: "slash-commands emit action:<name>; also carry their own social
+           valence which applies only when declared traits have no strong
+           opinion (|trait_net| < 0.3 — the vacuum rule)."
+    names: ["gift", "hug", "insult", "praise", "comfort", "challenge", "leave"]
+
+# ---------------------------------------------------------------------------
+# EXAMPLE — a complete, valid, fully-fireable character. Shape reference only
+# (modeled on the shipped kira, with one dead trigger removed and intensities
+# rounded): name -> baselines -> likes -> dislikes -> explicit traits.
+# ---------------------------------------------------------------------------
+example: |
+  name: Kira
+  mood_baseline:
+    valence: -0.1
+    arousal: 0.3
+  voice_baseline:
+    temperature: 0.45
+    verbosity: -0.1
+    humor: 0.1
+    formality: 0.4
+    metaphor_density: 0.4
+  likes:
+  - domain: taste
+    values: [sweet]
+    intensity: 0.7
+  - domain: activity
+    values: [climbing]
+    intensity: 0.5
+  - domain: entity
+    values: [dog]
+    intensity: 0.4
+  - domain: item
+    values: [honey]
+    intensity: 0.5
+  dislikes:
+  - domain: taste
+    values: [salty]
+    intensity: -0.7
+  - domain: topic
+    values: [weather]
+    intensity: -0.2
+  - domain: tag
+    values: [potentially_dangerous]
+    intensity: -0.6
+  traits:
+  - trait_id: vegetarian
+    category: surface
+    description: Raised above a bakery on bread, fruit and sweets; the idea of
+      eating flesh genuinely revolts her.
+    triggers:
+    - domain: tag
+      values: [meat]
+    base_intensity: -0.75
+    current_intensity: -0.75
+    curve: steep
+    archetypes_negative: [disgusted_rejection, cold_withdrawal]
+    voice_modifiers:
+      temperature: -0.4
+      verbosity: -0.2
+      humor: -0.5
+  - trait_id: felinophobia
+    category: core
+    description: Childhood trauma involving a feral cat.
+    triggers:
+    - domain: entity
+      values: [cat]
+    base_intensity: -0.9
+    current_intensity: -0.9
+    curve: steep
+    archetypes_negative: [disgusted_rejection, trauma_flashback, cold_withdrawal]
+    voice_modifiers:
+      temperature: -0.6
+      verbosity: -0.6
+      humor: -1.0
+      metaphor_density: 0.3
+    salience_class: high
+
+# ---------------------------------------------------------------------------
+# WARNING CHECK — the GUI flags (as warnings, not errors) any trigger whose
+# value no stimulus can ever produce. If the character is meant to react to
+# something, the value must exist in the lexicon or items.yaml. A value that
+# matches nothing is dead weight — cut it or fix it before shipping.
+# ---------------------------------------------------------------------------

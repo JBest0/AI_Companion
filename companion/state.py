@@ -21,6 +21,8 @@ class CompanionState(VersionedModel):
     narrative_log: list[dict] = Field(default_factory=list)
     last_session_end: float | None = None
     last_reflection_at: float | None = None
+    definition_hash: str = ""   # M8: hash of the definition this instance
+                                # was created from; "" = legacy, never badged
 
     def trait_registry(self) -> TraitRegistry:
         return TraitRegistry([Trait.model_validate(d) for d in self.registry])
@@ -35,6 +37,7 @@ class CompanionState(VersionedModel):
         affect_baseline: AffectState | None = None,
         backstory: str = "",
         speaking_style: str = "",
+        definition_hash: str = "",
     ) -> CompanionState:
         voice_baseline = voice_baseline if voice_baseline is not None else VoiceProfile()
         affect_baseline = affect_baseline if affect_baseline is not None else AffectState()
@@ -47,6 +50,7 @@ class CompanionState(VersionedModel):
             voice_baseline=voice_baseline,
             affect=affect_baseline.model_copy(deep=True),
             affect_baseline=affect_baseline.model_copy(deep=True),
+            definition_hash=definition_hash,
         )
 
     def begin_session(self, now: float | None = None) -> float:

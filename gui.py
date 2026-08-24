@@ -1,16 +1,17 @@
-"""Desktop GUI (Tkinter) — a native shell around the same CompanionSession.
+"""Desktop GUI (Tkinter) — the only front-end for the companion.
 
-Reuses the exact pipeline, state, memory and config layer that the web GUI
-used (server.py), but renders it as a desktop window with no browser, no
-JavaScript, no CSS and no GPU compositing — so it cannot hit the paint-level
-problem that broke the web render.
+A native shell around CompanionSession: no browser, no JavaScript, no CSS,
+no server. Renders the engine as a desktop window, so the paint-level problem
+that broke the earlier web render cannot occur.
 
     python gui.py                 # opens the window; companion.db in project root
     python gui.py --db my.db      # use a different database file
 
-Layout mirrors the web app: three columns = dashboard | chat | inspector.
-Provider/model/base-url config (mock / openai / deepseek / custom) is set from
-a bar at the top; keys come from .env / env vars exactly as in server.py.
+Three columns = dashboard | chat | inspector. Provider/model/base-url config
+(mock / openai / deepseek / custom) is set from a bar at the top; keys come
+from .env / env vars. The same bar switches characters, and the ＋ New / ✎
+Edit buttons open the Tkinter character creator (create / edit / duplicate /
+archive / purge).
 """
 from __future__ import annotations
 
@@ -21,9 +22,12 @@ import threading
 import time
 import tkinter as tk
 from pathlib import Path
-from tkinter import messagebox, scrolledtext, ttk
+from tkinter import messagebox, scrolledtext, simpledialog, ttk
 
 from companion import (
+    CHARACTER_TEMPLATES,
+    CharacterManager,
+    CharacterSpec,
     CompanionSession,
     CompanionState,
     Memory,
@@ -32,10 +36,11 @@ from companion import (
     load_character,
     load_dotenv,
 )
+from companion.models import AffectState, Trait, TraitCategory, Trigger, VoiceProfile
 
-# Reuse the tested provider/config layer from the web server so the desktop
-# app behaves identically for provider selection and LLM construction.
-from server import (  # noqa: E402
+# Provider/config layer. Was server.py; now companion.config so the desktop
+# app is fully self-contained — there is no HTTP anywhere in the project.
+from companion.config import (
     PROVIDERS,
     build_llm,
     config_warning,
@@ -45,29 +50,513 @@ from server import (  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent
 DB = ROOT / "companion.db"
-CHARACTER = "kira"
 
 load_dotenv(ROOT / ".env")
 
 
-def load_session(db_path: str) -> CompanionSession:
+def load_session(db_path: str, char_id: str) -> CompanionSession:
     """Hydrate or create the session, like chat.py but config-driven for the LLM."""
     store = Store(db_path)
-    state = CompanionState.hydrate(CHARACTER, store)
+    state = CompanionState.hydrate(char_id, store)
     if state is None:
-        char = load_character(ROOT / "characters" / f"{CHARACTER}.yaml")
+        char = load_character(ROOT / "characters" / f"{char_id}.yaml")
         persona = char["persona"]
         state = CompanionState.create(
-            companion_id=CHARACTER,
+            companion_id=char_id,
             name=char["name"],
             registry=char["registry"],
             voice_baseline=char["voice_baseline"],
             affect_baseline=char["mood_baseline"],
             backstory=persona.get("backstory", ""),
             speaking_style=persona.get("speaking_style", ""),
+            definition_hash=char["definition_hash"],   # M8
         )
     llm, _ = build_llm(load_config())
     return CompanionSession(state, store, llm, default_embedder())
+
+
+class CharacterEditor(tk.Toplevel):
+    """Create or edit a character definition (Tkinter creator for M8+).
+
+    Mirrors the web creator's fields: name, avatar, persona prose, mood and
+    voice baselines, likes/dislikes, and traits. Saving validates through
+    CharacterSpec and writes the YAML via CharacterManager.
+    """
+
+    PREF_DOMAINS = ("taste", "entity", "activity", "topic", "tag",
+                    "item", "category")
+    CURVES = ("linear", "steep", "threshold")
+    CATEGORIES = ("surface", "core")
+
+    def __init__(self, master, manager: CharacterManager, on_save, char_id=None):
+        super().__init__(master)
+        self.manager = manager
+        self.on_save = on_save
+        self.char_id = char_id
+        self._spec = None
+        self._likes: list[dict] = []
+        self._dislikes: list[dict] = []
+        self._traits: list[dict] = []
+
+        self.title("Edit character" if char_id else "New character")
+        self.geometry("520x720")
+        self.minsize(460, 540)
+        self.transient(master)
+        self.grab_set()
+
+        self._build_ui()
+        self._load_spec()
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
+
+    def _build_ui(self):
+        # scrolled canvas so the form fits on smaller screens
+        canvas = tk.Canvas(self, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
+        self._frame = ttk.Frame(canvas, padding=12)
+        self._frame.bind("<Configure>",
+                          lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=self._frame, anchor="nw", width=500)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        canvas.bind_all("<MouseWheel>", lambda e: canvas.yview_scroll(
+            int(-1 * (e.delta / 120)), "units"))
+
+        # template (new only)
+        self._template_row = self._row(self._frame, "Template")
+        self._template = ttk.Combobox(self._template_row, state="readonly",
+                                      values=list(CHARACTER_TEMPLATES.keys()),
+                                      width=20)
+        self._template.set("blank")
+        self._template.pack(side="left", fill="x", expand=True)
+        self._template.bind("<<ComboboxSelected>>", lambda e: self._apply_template())
+
+        # name
+        row, self._name_var, _ = self._entry_row(self._frame, "Name")
+
+        # id (new only; shown disabled when editing)
+        row, self._char_id, self._char_id_entry = self._entry_row(
+            self._frame, "Id (filename)")
+
+        # avatar
+        row, self._avatar, _ = self._entry_row(self._frame, "Avatar (one emoji)")
+
+        # persona
+        row, self._backstory = self._text_row(self._frame, "Backstory", 4)
+        row, self._style = self._text_row(self._frame, "Speaking style", 3)
+
+        # mood
+        ttk.Label(self._frame, text="Mood baseline",
+                  font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(12, 4))
+        row, self._valence = self._slider_row(self._frame, "gloomy ↔ sunny", -1, 1, 0.1)
+        row, self._arousal = self._slider_row(self._frame, "calm ↔ excitable", 0, 1, 0.1)
+
+        # voice
+        ttk.Label(self._frame, text="Voice baseline",
+                  font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(12, 4))
+        row, self._vtemp = self._slider_row(self._frame, "warmth", 0, 1, 0.05)
+        row, self._vverb = self._slider_row(self._frame, "verbosity", -1, 1, 0.1)
+        row, self._vhumor = self._slider_row(self._frame, "humor", -1, 1, 0.1)
+        row, self._vform = self._slider_row(self._frame, "formality", 0, 1, 0.05)
+        row, self._vmeta = self._slider_row(self._frame, "metaphor density", 0, 1, 0.05)
+
+        # likes / dislikes / traits
+        ttk.Label(self._frame, text="Personality",
+                  font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(12, 4))
+        self._likes_list, self._likes_frame = self._list_section(
+            self._frame, "Likes", self._add_like, self._del_like)
+        self._dislikes_list, self._dislikes_frame = self._list_section(
+            self._frame, "Dislikes", self._add_dislike, self._del_dislike)
+        self._traits_list, self._traits_frame = self._list_section(
+            self._frame, "Traits", self._add_trait, self._del_trait)
+
+        # errors
+        self._errors = ttk.Label(self._frame, text="", foreground="#f7768e",
+                                 wraplength=460, justify="left")
+        self._errors.pack(fill="x", pady=(10, 0))
+
+        # buttons
+        btns = ttk.Frame(self._frame)
+        btns.pack(fill="x", pady=(12, 0))
+        ttk.Button(btns, text="Cancel", command=self.destroy).pack(side="right", padx=(6, 0))
+        ttk.Button(btns, text="Save", command=self._save).pack(side="right")
+
+        # danger zone (edit only)
+        self._danger = ttk.LabelFrame(self._frame, text="Danger zone", padding=8)
+        ttk.Button(self._danger, text="Archive",
+                   command=self._archive).pack(side="left", padx=(0, 6))
+        ttk.Button(self._danger, text="Duplicate",
+                   command=self._duplicate).pack(side="left", padx=(0, 6))
+        ttk.Button(self._danger, text="Purge…",
+                   command=self._purge).pack(side="left")
+
+    @staticmethod
+    def _row(parent, label):
+        row = ttk.Frame(parent)
+        row.pack(fill="x", pady=3)
+        ttk.Label(row, text=label, width=16).pack(side="left")
+        return row
+
+    def _entry_row(self, parent, label):
+        row = self._row(parent, label)
+        var = tk.StringVar()
+        entry = ttk.Entry(row, textvariable=var)
+        entry.pack(side="left", fill="x", expand=True)
+        return row, var, entry
+
+    def _text_row(self, parent, label, height):
+        row = ttk.Frame(parent)
+        row.pack(fill="x", pady=3)
+        ttk.Label(row, text=label, width=16).pack(side="left", anchor="n")
+        txt = tk.Text(row, height=height, wrap="word",
+                      background="#14161a", foreground="#d8dce4",
+                      insertbackground="#d8dce4")
+        txt.pack(side="left", fill="x", expand=True)
+        return row, txt
+
+    def _slider_row(self, parent, label, min_v, max_v, step):
+        row = ttk.Frame(parent)
+        row.pack(fill="x", pady=2)
+        ttk.Label(row, text=label, width=16).pack(side="left")
+        var = tk.DoubleVar(value=(min_v + max_v) / 2)
+        scale = ttk.Scale(row, from_=min_v, to=max_v, variable=var,
+                          orient="horizontal", length=220)
+        scale.pack(side="left", fill="x", expand=True, padx=(0, 6))
+        val = ttk.Label(row, text=f"{var.get():.2f}", width=5)
+        val.pack(side="left")
+        var.trace_add("write", lambda *a, v=var, l=val:
+                      l.configure(text=f"{v.get():.2f}"))
+        return row, var
+
+    def _list_section(self, parent, label, add_cmd, del_cmd):
+        frame = ttk.LabelFrame(parent, text=label, padding=6)
+        frame.pack(fill="x", pady=4)
+        lst = tk.Listbox(frame, height=4, background="#14161a",
+                         foreground="#d8dce4")
+        lst.pack(side="left", fill="both", expand=True)
+        btns = ttk.Frame(frame)
+        btns.pack(side="right", fill="y", padx=(6, 0))
+        ttk.Button(btns, text="+", width=3, command=add_cmd).pack(pady=(0, 3))
+        ttk.Button(btns, text="−", width=3, command=del_cmd).pack()
+        return lst, frame
+
+    def _load_spec(self):
+        if self.char_id:
+            self._spec = self.manager.load(self.char_id)
+            self._template_row.pack_forget()
+            self._char_id.set(self.char_id)
+            self._char_id_entry.configure(state="disabled")
+            self._danger.pack(fill="x", pady=(14, 0))
+            self._fill_form()
+        else:
+            # No spec yet: a CharacterSpec requires a valid id + name, which
+            # the user hasn't typed. Fill the form from the raw template dict
+            # instead, and let _save build (and validate) the spec.
+            self._spec = None
+            self._danger.pack_forget()
+            self._fill_from_dict(CHARACTER_TEMPLATES[self._template.get()])
+
+    def _fill_form(self):
+        s = self._spec
+        self._name_var.set(s.name)
+        self._char_id.set(s.char_id)
+        self._avatar.set(s.avatar)
+        self._backstory.delete("1.0", "end")
+        self._backstory.insert("1.0", s.backstory)
+        self._style.delete("1.0", "end")
+        self._style.insert("1.0", s.speaking_style)
+        self._valence.set(s.mood_baseline.valence)
+        self._arousal.set(s.mood_baseline.arousal)
+        self._vtemp.set(s.voice_baseline.temperature)
+        self._vverb.set(s.voice_baseline.verbosity)
+        self._vhumor.set(s.voice_baseline.humor)
+        self._vform.set(s.voice_baseline.formality)
+        self._vmeta.set(s.voice_baseline.metaphor_density)
+        self._likes = [{"domain": p.domain, "values": list(p.values),
+                        "intensity": p.intensity} for p in s.likes]
+        self._dislikes = [{"domain": p.domain, "values": list(p.values),
+                           "intensity": p.intensity} for p in s.dislikes]
+        self._traits = []
+        for t in s.traits:
+            self._traits.append({
+                "trait_id": t.trait_id,
+                "category": t.category.value,
+                "description": t.description,
+                "triggers": [{"domain": tr.domain, "values": list(tr.values)}
+                             for tr in t.triggers],
+                "base_intensity": t.base_intensity,
+                "current_intensity": t.current_intensity,
+                "curve": t.curve,
+                "archetypes_negative": list(t.archetypes_negative),
+                "archetypes_positive": list(t.archetypes_positive),
+                "voice_modifiers": t.voice_modifiers.model_dump(),
+                "salience_class": t.salience_class,
+            })
+        self._refresh_lists()
+
+    def _apply_template(self):
+        # Templates are partial character-file dicts and can't build a spec
+        # until the user supplies a valid name and id, so fill the form
+        # directly and preserve whatever they already typed.
+        name = self._name_var.get()
+        cid = self._char_id.get()
+        self._fill_from_dict(CHARACTER_TEMPLATES[self._template.get()])
+        self._name_var.set(name)
+        self._char_id.set(cid)
+
+    def _fill_from_dict(self, data):
+        """Populate the form from a raw character-file/template dict. Used for
+        new characters, where there is no CharacterSpec yet."""
+        self._name_var.set(data.get("name", ""))
+        self._char_id.set(data.get("char_id", ""))
+        self._avatar.set(data.get("avatar") or "")
+        self._backstory.delete("1.0", "end")
+        self._backstory.insert("1.0",
+                               (data.get("persona") or {}).get("backstory", ""))
+        self._style.delete("1.0", "end")
+        self._style.insert("1.0",
+                           (data.get("persona") or {}).get("speaking_style", ""))
+        mb = data.get("mood_baseline") or {}
+        self._valence.set(mb.get("valence", 0.0))
+        self._arousal.set(mb.get("arousal", 0.2))
+        vb = data.get("voice_baseline") or {}
+        self._vtemp.set(vb.get("temperature", 0.5))
+        self._vverb.set(vb.get("verbosity", 0.0))
+        self._vhumor.set(vb.get("humor", 0.0))
+        self._vform.set(vb.get("formality", 0.5))
+        self._vmeta.set(vb.get("metaphor_density", 0.2))
+        self._likes = [dict(p) for p in (data.get("likes") or [])]
+        self._dislikes = [dict(p) for p in (data.get("dislikes") or [])]
+        self._traits = [dict(t) for t in (data.get("traits") or [])]
+        self._refresh_lists()
+
+    def _refresh_lists(self):
+        for lst, data, fmt in (
+            (self._likes_list, self._likes,
+             lambda d: f"{d['domain']}: {', '.join(d['values'])} ({d['intensity']:+.2f})"),
+            (self._dislikes_list, self._dislikes,
+             lambda d: f"{d['domain']}: {', '.join(d['values'])} ({d['intensity']:+.2f})"),
+            (self._traits_list, self._traits,
+             lambda d: f"{d['trait_id']} ({d['category']}) {d['base_intensity']:+.2f}"),
+        ):
+            lst.delete(0, "end")
+            for item in data:
+                lst.insert("end", fmt(item))
+
+    def _add_like(self):
+        self._edit_pref(self._likes, +1)
+
+    def _add_dislike(self):
+        self._edit_pref(self._dislikes, -1)
+
+    def _del_like(self):
+        self._del_selected(self._likes_list, self._likes)
+
+    def _del_dislike(self):
+        self._del_selected(self._dislikes_list, self._dislikes)
+
+    def _add_trait(self):
+        self._edit_trait()
+
+    def _del_trait(self):
+        self._del_selected(self._traits_list, self._traits)
+
+    def _del_selected(self, lst, data):
+        sel = lst.curselection()
+        if not sel:
+            return
+        idx = sel[0]
+        data.pop(idx)
+        self._refresh_lists()
+
+    def _edit_pref(self, data, sign):
+        dialog = tk.Toplevel(self)
+        dialog.title("Preference")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.geometry("360x160")
+
+        ttk.Label(dialog, text="Domain").grid(row=0, column=0, padx=6, pady=6)
+        domain = ttk.Combobox(dialog, state="readonly", values=self.PREF_DOMAINS)
+        domain.set(self.PREF_DOMAINS[0])
+        domain.grid(row=0, column=1, padx=6, pady=6)
+
+        ttk.Label(dialog, text="Values (comma)").grid(row=1, column=0, padx=6, pady=6)
+        values = ttk.Entry(dialog)
+        values.grid(row=1, column=1, padx=6, pady=6, sticky="ew")
+
+        ttk.Label(dialog, text="Intensity").grid(row=2, column=0, padx=6, pady=6)
+        intensity = tk.DoubleVar(value=0.5)
+        ttk.Scale(dialog, from_=0.1, to=1.0, variable=intensity,
+                  orient="horizontal").grid(row=2, column=1, padx=6, pady=6, sticky="ew")
+
+        def ok():
+            vals = [v.strip() for v in values.get().split(",") if v.strip()]
+            if not vals:
+                return
+            data.append({"domain": domain.get(), "values": vals,
+                         "intensity": sign * abs(float(intensity.get()))})
+            self._refresh_lists()
+            dialog.destroy()
+
+        ttk.Button(dialog, text="OK", command=ok).grid(row=3, column=1, padx=6,
+                                                        pady=6, sticky="e")
+        dialog.columnconfigure(1, weight=1)
+        dialog.wait_window(dialog)
+
+    def _edit_trait(self):
+        dialog = tk.Toplevel(self)
+        dialog.title("Trait")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.geometry("420x280")
+
+        ttk.Label(dialog, text="trait_id").grid(row=0, column=0, padx=6, pady=4)
+        tid = ttk.Entry(dialog)
+        tid.grid(row=0, column=1, padx=6, pady=4, sticky="ew")
+
+        ttk.Label(dialog, text="Domain").grid(row=1, column=0, padx=6, pady=4)
+        domain = ttk.Combobox(dialog, state="readonly", values=self.PREF_DOMAINS)
+        domain.set(self.PREF_DOMAINS[0])
+        domain.grid(row=1, column=1, padx=6, pady=4, sticky="ew")
+
+        ttk.Label(dialog, text="Values (comma)").grid(row=2, column=0, padx=6, pady=4)
+        values = ttk.Entry(dialog)
+        values.grid(row=2, column=1, padx=6, pady=4, sticky="ew")
+
+        ttk.Label(dialog, text="Intensity").grid(row=3, column=0, padx=6, pady=4)
+        intensity = tk.DoubleVar(value=-0.5)
+        ttk.Scale(dialog, from_=-1.0, to=1.0, variable=intensity,
+                  orient="horizontal").grid(row=3, column=1, padx=6, pady=4, sticky="ew")
+
+        ttk.Label(dialog, text="Curve").grid(row=4, column=0, padx=6, pady=4)
+        curve = ttk.Combobox(dialog, state="readonly", values=self.CURVES)
+        curve.set("linear")
+        curve.grid(row=4, column=1, padx=6, pady=4, sticky="ew")
+
+        ttk.Label(dialog, text="Category").grid(row=5, column=0, padx=6, pady=4)
+        category = ttk.Combobox(dialog, state="readonly", values=self.CATEGORIES)
+        category.set("surface")
+        category.grid(row=5, column=1, padx=6, pady=4, sticky="ew")
+
+        ttk.Label(dialog, text="Description").grid(row=6, column=0, padx=6, pady=4)
+        desc = ttk.Entry(dialog)
+        desc.grid(row=6, column=1, padx=6, pady=4, sticky="ew")
+
+        def ok():
+            vals = [v.strip() for v in values.get().split(",") if v.strip()]
+            if not vals:
+                return
+            self._traits.append({
+                "trait_id": tid.get().strip(),
+                "category": category.get(),
+                "description": desc.get().strip(),
+                "triggers": [{"domain": domain.get(), "values": vals}],
+                "base_intensity": float(intensity.get()),
+                "current_intensity": float(intensity.get()),
+                "curve": curve.get(),
+                "archetypes_negative": [],
+                "archetypes_positive": [],
+                "voice_modifiers": {},
+                "salience_class": "medium",
+            })
+            self._refresh_lists()
+            dialog.destroy()
+
+        ttk.Button(dialog, text="OK", command=ok).grid(row=7, column=1, padx=6,
+                                                        pady=8, sticky="e")
+        dialog.columnconfigure(1, weight=1)
+        dialog.wait_window(dialog)
+
+    def _collect_spec(self) -> CharacterSpec:
+        data = {
+            "char_id": self._char_id.get().strip(),
+            "name": self._name_var.get().strip(),
+            "avatar": self._avatar.get().strip(),
+            "mood_baseline": {
+                "valence": float(self._valence.get()),
+                "arousal": float(self._arousal.get()),
+            },
+            "voice_baseline": {
+                "temperature": float(self._vtemp.get()),
+                "verbosity": float(self._vverb.get()),
+                "humor": float(self._vhumor.get()),
+                "formality": float(self._vform.get()),
+                "metaphor_density": float(self._vmeta.get()),
+            },
+            "backstory": self._backstory.get("1.0", "end-1c"),
+            "speaking_style": self._style.get("1.0", "end-1c"),
+            "likes": self._likes,
+            "dislikes": self._dislikes,
+            "traits": self._traits,
+        }
+        return CharacterSpec.from_yaml_dict(data, data["char_id"])
+
+    def _save(self):
+        self._errors.configure(text="")
+        try:
+            spec = self._collect_spec()
+        except Exception as e:  # noqa: BLE001
+            self._errors.configure(text=f"Validation error: {e}")
+            return
+        try:
+            if self.char_id:
+                self.manager.update(self.char_id, spec)
+                char_id, action = self.char_id, "update"
+            else:
+                self.manager.create(spec)
+                char_id, action = spec.char_id, "create"
+        except Exception as e:  # noqa: BLE001
+            self._errors.configure(text=f"Save failed: {e}")
+            return
+        self.on_save(char_id, action)
+        self.destroy()
+
+    def _archive(self):
+        # web parity: only the active character is ever editable, and the
+        # engine needs a live companion, so the active one cannot be removed.
+        if self.char_id == load_config().get("active_character"):
+            messagebox.showerror(
+                "Archive", "cannot archive the active character — "
+                           "switch to someone else first")
+            return
+        if not messagebox.askyesno("Archive", f"Archive {self.char_id}?\n\n"
+                                   "The file moves to characters/.archive and the DB is untouched."):
+            return
+        try:
+            self.manager.archive(self.char_id)
+            self.on_save(None, "archive")
+            self.destroy()
+        except Exception as e:  # noqa: BLE001
+            messagebox.showerror("Archive failed", str(e))
+
+    def _duplicate(self):
+        name = self._name_var.get().strip() + " copy"
+        new_id = self._char_id.get().strip() + "_copy"
+        try:
+            created = self.manager.duplicate(self.char_id, new_id, name)
+            self.on_save(created, "duplicate")
+            self.destroy()
+        except Exception as e:  # noqa: BLE001
+            messagebox.showerror("Duplicate failed", str(e))
+
+    def _purge(self):
+        # web parity: the active character cannot be permanently removed.
+        if self.char_id == load_config().get("active_character"):
+            messagebox.showerror(
+                "Purge", "cannot purge the active character — "
+                         "switch to someone else first")
+            return
+        confirm = simpledialog.askstring(
+            "Purge character", f"Type '{self.char_id}' to permanently delete the file and DB rows:")
+        if confirm != self.char_id:
+            return
+        try:
+            self.manager.purge(self.char_id)
+            self.on_save(None, "purge")
+            self.destroy()
+        except Exception as e:  # noqa: BLE001
+            messagebox.showerror("Purge failed", str(e))
 
 
 class ConfigBar(ttk.Frame):
@@ -99,6 +588,25 @@ class ConfigBar(ttk.Frame):
 
         self.status = ttk.Label(self, text="", foreground="#e0af68")
         self.status.grid(row=0, column=7, sticky="w")
+
+        ttk.Label(self, text="Character").grid(row=0, column=8, padx=(12, 4))
+        self.character = tk.StringVar()
+        self.char_menu = ttk.Combobox(self, textvariable=self.character,
+                                      state="readonly", width=12)
+        self.char_menu.grid(row=0, column=9)
+        self.char_menu.bind("<<ComboboxSelected>>",
+                            lambda e: self.on_character(self.character.get()))
+        self.on_character = lambda cid: None   # replaced by App
+
+        self.edit_btn = ttk.Button(self, text="✎ Edit", width=6,
+                                   command=lambda: self.on_edit())
+        self.edit_btn.grid(row=0, column=10, padx=(8, 4))
+        self.on_edit = lambda: None            # replaced by App
+
+        self.new_btn = ttk.Button(self, text="＋ New", width=7,
+                                  command=lambda: self.on_new())
+        self.new_btn.grid(row=0, column=11, padx=(0, 8))
+        self.on_new = lambda: None             # replaced by App
 
         self._refresh_from_config()
 
@@ -319,7 +827,11 @@ class Inspector(ttk.Frame):
 class App:
     def __init__(self, root, db_path):
         self.root = root
-        self.session = load_session(db_path)
+        self.db_path = db_path
+        self.active = load_config().get("active_character", "kira")
+        self.manager = CharacterManager(ROOT / "characters", Store(db_path))
+        self.session = load_session(db_path, self.active)
+        self.switching = False
         self.q: "queue.Queue" = queue.Queue()
         self.root.title(f"Companion — {self.session.state.name}")
         self.root.geometry("1240x700")
@@ -343,6 +855,14 @@ class App:
 
         self.config_bar.bind_session(self.session)
 
+        ids = [c.char_id for c in self.manager.list(include_archived=False)
+               if c.valid]
+        self.config_bar.char_menu["values"] = ids
+        self.config_bar.character.set(self.active)
+        self.config_bar.on_character = self._switch_character
+        self.config_bar.on_new = lambda: self._open_editor(None)
+        self.config_bar.on_edit = lambda: self._open_editor(self.active)
+
         gap = self.session.open()
         self.chat.transcript.configure(state="normal")
         self.chat.transcript.insert(
@@ -353,6 +873,121 @@ class App:
 
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self.root.after(80, self._poll)
+
+    def _switch_character(self, char_id):
+        if self.switching or char_id == self.active:
+            return
+        restart = self._restart_choice(char_id)
+        if restart is None:                       # user cancelled the dialog
+            self.config_bar.character.set(self.active)
+            return
+        self.switching = True
+        self.chat.send_btn.configure(state="disabled")
+        self._set_editing_buttons(False)
+
+        def work():
+            try:
+                self.session.close()          # M4 close semantics
+                if restart:
+                    self.manager.store.purge_companion(char_id)
+                self.session = load_session(self.db_path, char_id)
+                self.active = char_id
+                save_config({**load_config(), "active_character": char_id})
+                gap = self.session.open()
+                self.q.put(("switched", char_id, gap))
+            except Exception as e:  # noqa: BLE001
+                self.q.put(("error", str(e)))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    # ---- character creator wiring ----
+    def _open_editor(self, char_id):
+        CharacterEditor(self.root, self.manager,
+                        on_save=self._on_editor_save, char_id=char_id)
+
+    def _on_editor_save(self, char_id, action):
+        if action == "create" and char_id:
+            self._refresh_char_menu()
+            self._switch_character(char_id)      # M8 lock 8: auto-select
+        elif action == "duplicate":
+            self._refresh_char_menu()
+            self.config_bar.status.configure(text=f"duplicated → {char_id}")
+        elif action == "update":
+            self._refresh_char_menu()
+            self.config_bar.status.configure(
+                text="definition saved — instance unchanged; "
+                     "restart as new to apply")
+        else:                                     # archive / purge
+            self._refresh_char_menu()
+            self.config_bar.status.configure(
+                text=f"character {char_id or ''} removed")
+
+    def _refresh_char_menu(self):
+        ids = [c.char_id for c in self.manager.list(include_archived=False)
+               if c.valid]
+        self.config_bar.char_menu["values"] = ids
+        self.config_bar.character.set(self.active)
+
+    def _set_editing_buttons(self, enabled):
+        state = "normal" if enabled else "disabled"
+        self.config_bar.edit_btn.configure(state=state)
+        self.config_bar.new_btn.configure(state=state)
+
+    # ---- restart-as-new on switch (M8 definition vs instance) ----
+    def _restart_choice(self, char_id):
+        """If char_id has a saved instance whose stored definition_hash differs
+        from the file's, ask Keep talking / Restart as new / Cancel. Returns
+        'keep' | 'restart' | None (cancel). Legacy instances (stored hash '')
+        are never badged (M8 lock 4)."""
+        summary = next(
+            (c for c in self.manager.list(include_archived=False)
+             if c.char_id == char_id), None)
+        if summary is None or not summary.valid or not summary.has_save:
+            return "keep"
+        stored = self._stored_definition_hash(char_id)
+        if not (summary.definition_hash and stored
+                and summary.definition_hash != stored):
+            return "keep"
+        return self._ask_restart(summary.name or char_id)
+
+    def _stored_definition_hash(self, char_id):
+        raw = self.manager.store.load_state(char_id)
+        if raw is None:
+            return ""
+        try:
+            return json.loads(raw).get("definition_hash", "") or ""
+        except ValueError:
+            return ""
+
+    def _ask_restart(self, name):
+        result = {"value": None}
+
+        def finish(value):
+            result["value"] = value
+            dlg.destroy()
+
+        dlg = tk.Toplevel(self.root)
+        dlg.title("Definition changed")
+        dlg.transient(self.root)
+        dlg.grab_set()
+        dlg.resizable(False, False)
+        dlg.bind("<Escape>", lambda e: finish(None))
+        ttk.Label(dlg, wraplength=380, justify="left",
+                  text=(f"{name}'s definition was edited since you met. Keep "
+                        "talking leaves the current companion and memories "
+                        "untouched; restart as new replaces them with a fresh "
+                        "companion from the updated definition.")).pack(
+                        padx=16, pady=(16, 12))
+        btns = ttk.Frame(dlg)
+        btns.pack(pady=(0, 12))
+        ttk.Button(btns, text="Cancel",
+                   command=lambda: finish(None)).pack(side="left", padx=4)
+        ttk.Button(btns, text="Keep talking",
+                   command=lambda: finish("keep")).pack(side="left", padx=4)
+        ttk.Button(btns, text="Restart as new",
+                   command=lambda: finish("restart")).pack(side="left", padx=4)
+        dlg.wait_window(dlg)
+        return result["value"]
 
     # ---- sending ----
     def _handle_send(self, text):
@@ -382,7 +1017,24 @@ class App:
                             meta += f" · fallback — {reason[:120]}"
                     self.chat.append("companion", response, meta)
                     self._refresh_all()
+                elif item[0] == "switched":
+                    _, char_id, gap = item
+                    self.config_bar.bind_session(self.session)
+                    self.root.title(f"Companion — {self.session.state.name}")
+                    self.chat.transcript.configure(state="normal")
+                    self.chat.transcript.delete("1.0", "end")
+                    self.chat.transcript.insert(
+                        "end", f"{self.session.state.name} is awake "
+                               f"(gap {gap:.2f}h). Type /help for methods.\n\n")
+                    self.chat.transcript.configure(state="disabled")
+                    self.switching = False
+                    self.config_bar.character.set(self.active)
+                    self._set_editing_buttons(True)
+                    self._refresh_all()
                 elif item[0] == "error":
+                    self.switching = False
+                    self._set_editing_buttons(True)
+                    self.config_bar.character.set(self.active)
                     self.chat.append("error", item[1])
                 self.chat.set_ready()
         except queue.Empty:

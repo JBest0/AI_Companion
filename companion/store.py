@@ -160,3 +160,33 @@ class Store:
             entry = {"id": row_id, "created_at": created_at, "rolled_back": bool(rolled_back), "applied": data}
             result.append(__import__("json").dumps(entry))
         return result
+
+    def list_state_meta(self) -> dict[str, float]:
+        """companion_id -> updated_at, for every saved instance."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT companion_id, updated_at FROM companion_state"
+            ).fetchall()
+            return {r[0]: r[1] for r in rows}
+
+    def count_traces(self, companion_id: str) -> int:
+        with self._conn() as conn:
+            return conn.execute(
+                "SELECT COUNT(*) FROM turn_traces WHERE companion_id = ?",
+                (companion_id,)).fetchone()[0]
+
+    def count_memories(self, companion_id: str) -> int:
+        with self._conn() as conn:
+            return conn.execute(
+                "SELECT COUNT(*) FROM memories WHERE companion_id = ?",
+                (companion_id,)).fetchone()[0]
+
+    def purge_companion(self, companion_id: str) -> None:
+        """Every row for this id, all four tables. Used by restart-as-new
+        and by permanent purge. Irreversible."""
+        with self._conn() as conn:
+            for table in ("companion_state", "turn_traces", "memories",
+                          "reflection_log"):
+                conn.execute(f"DELETE FROM {table} WHERE companion_id = ?",
+                             (companion_id,))
+            conn.commit()
