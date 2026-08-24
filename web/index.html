@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Companion</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/static/style.css?v=3">
+</head>
+<body>
+<div id="app">
+
+  <!-- left: who she is right now -->
+  <aside id="left">
+    <div id="left-head">
+      <h1 id="companion-name">…</h1>
+      <button id="settings-btn" title="API settings" aria-label="API settings">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <line x1="4" y1="7" x2="20" y2="7"/><circle cx="9" cy="7" r="2.5"/>
+          <line x1="4" y1="12" x2="20" y2="12"/><circle cx="15" cy="12" r="2.5"/>
+          <line x1="4" y1="17" x2="20" y2="17"/><circle cx="7" cy="17" r="2.5"/>
+        </svg>
+      </button>
+    </div>
+    <p id="narrative" class="dim"></p>
+
+    <section>
+      <h2>Relationship</h2>
+      <div class="bar-row"><label>trust</label>
+        <div class="bar"><div id="bar-trust" class="fill trust"></div></div>
+        <span id="val-trust" class="num"></span></div>
+      <div class="bar-row"><label>intimacy</label>
+        <div class="bar"><div id="bar-intimacy" class="fill intimacy"></div></div>
+        <span id="val-intimacy" class="num"></span></div>
+      <div class="bar-row"><label>resentment</label>
+        <div class="bar"><div id="bar-resentment" class="fill resentment"></div></div>
+        <span id="val-resentment" class="num"></span></div>
+    </section>
+
+    <section>
+      <h2>Phases</h2>
+      <div id="phases"><span class="dim">none</span></div>
+    </section>
+
+    <section>
+      <h2>Mood</h2>
+      <div class="bar-row"><label>valence</label>
+        <div class="bar center"><div id="bar-valence" class="fill valence"></div></div>
+        <span id="val-valence" class="num"></span></div>
+      <div class="bar-row"><label>arousal</label>
+        <div class="bar"><div id="bar-arousal" class="fill arousal"></div></div>
+        <span id="val-arousal" class="num"></span></div>
+    </section>
+  </aside>
+
+  <!-- center: the conversation -->
+  <main id="chat-wrap">
+    <div id="chat"></div>
+    <form id="composer">
+      <input id="input" autocomplete="off"
+             placeholder="Say something… (/gift cake, /hug, /insult me)">
+      <button type="submit">Send</button>
+    </form>
+  </main>
+
+  <!-- right: the machinery -->
+  <aside id="right">
+    <nav id="tabs">
+      <button data-tab="traces" class="active">Traces</button>
+      <button data-tab="memories">Memories</button>
+      <button data-tab="reflections">Reflections</button>
+    </nav>
+    <div id="panel-traces" class="panel active">
+      <div id="trace-list"></div>
+      <div id="trace-detail" class="hidden"></div>
+    </div>
+    <div id="panel-memories" class="panel"><div id="memory-list"></div></div>
+    <div id="panel-reflections" class="panel"><div id="reflection-list"></div></div>
+  </aside>
+
+</div>
+
+<div id="config-modal" class="modal hidden">
+  <div class="modal-card">
+    <h2>API configuration</h2>
+    <label for="cfg-provider">Provider</label>
+    <select id="cfg-provider">
+      <option value="mock">Mock — deterministic, offline</option>
+      <option value="openai">OpenAI</option>
+      <option value="deepseek">DeepSeek</option>
+      <option value="custom">Custom OpenAI-compatible</option>
+    </select>
+    <label for="cfg-model">Model <span class="dim">(blank = provider default)</span></label>
+    <input id="cfg-model" type="text" autocomplete="off" placeholder="gpt-4o-mini, deepseek-chat, …">
+    <label for="cfg-base-url" id="cfg-base-url-label">Base URL <span class="dim">(custom only)</span></label>
+    <input id="cfg-base-url" type="text" autocomplete="off" placeholder="https://api.example.com/v1">
+    <p id="cfg-warning" class="warn hidden"></p>
+    <div class="modal-actions">
+      <button id="cfg-cancel" class="ghost">Cancel</button>
+      <button id="cfg-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="/static/app.js?v=3"></script>
+</body>
+</html>

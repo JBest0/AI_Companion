@@ -1,0 +1,866 @@
+# World content (Milestone 7 + fantasy expansion): items the user can mention or /gift.
+# An item = id + category + flat tags. Characters react to the TAGS (and
+# categories, and specific item ids), so authoring a new item needs no new
+# code — a vegan companion and a steak meet in the constraint engine.
+#
+# Rules:
+#   - id is a single token (this is what /gift takes: /gift steak)
+#   - category must be declared below
+#   - tags are lowercase snake_case; aliases may be multi-word phrases
+categories:
+- food
+- toy
+- weapon
+- drink
+- tool
+- clothing
+- container
+- material
+- lighting
+- writing
+- medical
+- currency
+- instrument
+- misc
+items:
+- id: steak
+  name: Steak
+  category: food
+  tags:
+  - luxurious
+  - savory
+  - meat
+- id: chocolate_bar
+  name: Chocolate bar
+  category: food
+  tags:
+  - sweet
+  - comforting
+  aliases:
+  - chocolate
+- id: plush_cat
+  name: Plush cat
+  category: toy
+  tags:
+  - soft
+  - comforting
+  - cute
+  aliases:
+  - stuffed cat
+- id: sword
+  name: Sword
+  category: weapon
+  tags:
+  - iron
+  - weapon
+  - potentially_dangerous
+- id: teddy_bear
+  name: Teddy bear
+  category: toy
+  tags:
+  - soft
+  - comforting
+  - childlike
+- id: bread
+  name: Bread
+  category: food
+  tags:
+  - staple
+  - grain
+  - filling
+  - perishable
+  - common
+  aliases:
+  - loaf
+  - loaf of bread
+- id: hardtack
+  name: Hardtack
+  category: food
+  tags:
+  - staple
+  - grain
+  - durable
+  - bland
+  - travel_food
+  - common
+  aliases:
+  - ship biscuit
+  - cracker
+- id: cheese
+  name: Cheese
+  category: food
+  tags:
+  - dairy
+  - savory
+  - filling
+  - perishable
+  - common
+  aliases:
+  - wheel of cheese
+- id: salt_pork
+  name: Salt pork
+  category: food
+  tags:
+  - meat
+  - savory
+  - preserved
+  - salty
+  - common
+  aliases:
+  - bacon
+  - cured pork
+- id: dried_fruit
+  name: Dried fruit
+  category: food
+  tags:
+  - sweet
+  - preserved
+  - light
+  - travel_food
+  - common
+  aliases:
+  - raisins
+  - dried apple
+- id: onion
+  name: Onion
+  category: food
+  tags:
+  - vegetable
+  - pungent
+  - staple
+  - common
+  - cheap
+  aliases:
+  - yellow onion
+- id: sausage
+  name: Sausage
+  category: food
+  tags:
+  - meat
+  - savory
+  - preserved
+  - greasy
+  - common
+  aliases:
+  - link sausage
+- id: honey
+  name: Honey
+  category: food
+  tags:
+  - sweet
+  - preserved
+  - luxurious
+  - sticky
+  - common
+  aliases:
+  - jar of honey
+- id: pickled_fish
+  name: Pickled fish
+  category: food
+  tags:
+  - fish
+  - pungent
+  - preserved
+  - salty
+  - common
+  aliases:
+  - salted fish
+  - herring
+- id: oat_porridge
+  name: Oat porridge
+  category: food
+  tags:
+  - staple
+  - grain
+  - bland
+  - warm
+  - cheap
+  - common
+  aliases:
+  - oatmeal
+  - gruel
+- id: ale
+  name: Ale
+  category: drink
+  tags:
+  - alcoholic
+  - fermented
+  - grain
+  - common
+  - cheap
+  aliases:
+  - mug of ale
+  - beer
+- id: mead
+  name: Mead
+  category: drink
+  tags:
+  - alcoholic
+  - fermented
+  - sweet
+  - honey
+  - common
+  aliases:
+  - honey wine
+  - cup of mead
+- id: wine
+  name: Wine
+  category: drink
+  tags:
+  - alcoholic
+  - fermented
+  - fruity
+  - luxurious
+  - common
+  aliases:
+  - bottle of wine
+  - red wine
+- id: water
+  name: Water
+  category: drink
+  tags:
+  - non_alcoholic
+  - clear
+  - essential
+  - common
+  - cheap
+  aliases:
+  - fresh water
+- id: goat_milk
+  name: Goat milk
+  category: drink
+  tags:
+  - dairy
+  - fresh
+  - perishable
+  - common
+  - cheap
+  aliases:
+  - milk
+- id: rope
+  name: Rope
+  category: tool
+  tags:
+  - hemp
+  - sturdy
+  - versatile
+  - essential
+  - common
+  aliases:
+  - coil of rope
+  - hemp rope
+- id: flint_and_steel
+  name: Flint and steel
+  category: tool
+  tags:
+  - fire
+  - metal
+  - essential
+  - durable
+  - common
+  aliases:
+  - fire starter
+  - striker
+- id: whetstone
+  name: Whetstone
+  category: tool
+  tags:
+  - stone
+  - maintenance
+  - sharp
+  - durable
+  - common
+  aliases:
+  - sharpening stone
+- id: sewing_kit
+  name: Sewing kit
+  category: tool
+  tags:
+  - needle
+  - thread
+  - repair
+  - compact
+  - common
+  aliases:
+  - needle and thread
+  - mending kit
+- id: fishing_rod
+  name: Fishing rod
+  category: tool
+  tags:
+  - wood
+  - leisure
+  - food_source
+  - common
+  aliases:
+  - pole
+- id: shovel
+  name: Shovel
+  category: tool
+  tags:
+  - iron
+  - wood
+  - digging
+  - heavy
+  - common
+  aliases:
+  - spade
+- id: hammer
+  name: Hammer
+  category: tool
+  tags:
+  - iron
+  - wood
+  - blunt
+  - repair
+  - common
+  aliases:
+  - carpenter hammer
+- id: crowbar
+  name: Crowbar
+  category: tool
+  tags:
+  - iron
+  - prying
+  - heavy
+  - sturdy
+  - common
+  aliases:
+  - iron bar
+  - wrecking bar
+- id: trowel
+  name: Trowel
+  category: tool
+  tags:
+  - iron
+  - small
+  - digging
+  - gardening
+  - common
+  aliases:
+  - small shovel
+- id: cloak
+  name: Cloak
+  category: clothing
+  tags:
+  - wool
+  - warm
+  - outerwear
+  - common
+  - travel
+  aliases:
+  - traveling cloak
+  - mantle
+- id: leather_boots
+  name: Leather boots
+  category: clothing
+  tags:
+  - leather
+  - footwear
+  - durable
+  - common
+  aliases:
+  - boots
+- id: linen_tunic
+  name: Linen tunic
+  category: clothing
+  tags:
+  - linen
+  - light
+  - breathable
+  - common
+  - cheap
+  aliases:
+  - tunic
+  - shirt
+- id: woolen_cap
+  name: Woolen cap
+  category: clothing
+  tags:
+  - wool
+  - warm
+  - headwear
+  - common
+  - cheap
+  aliases:
+  - cap
+  - beanie
+- id: leather_belt
+  name: Leather belt
+  category: clothing
+  tags:
+  - leather
+  - accessory
+  - sturdy
+  - common
+  aliases:
+  - belt
+- id: woolen_scarf
+  name: Woolen scarf
+  category: clothing
+  tags:
+  - wool
+  - warm
+  - accessory
+  - common
+  - cheap
+  aliases:
+  - scarf
+  - muffler
+- id: gloves
+  name: Gloves
+  category: clothing
+  tags:
+  - leather
+  - handwear
+  - protective
+  - common
+  aliases:
+  - leather gloves
+- id: backpack
+  name: Backpack
+  category: container
+  tags:
+  - leather
+  - canvas
+  - travel
+  - essential
+  - common
+  aliases:
+  - pack
+  - rucksack
+- id: waterskin
+  name: Waterskin
+  category: container
+  tags:
+  - leather
+  - liquid
+  - travel
+  - essential
+  - common
+  aliases:
+  - flask
+  - water flask
+- id: sack
+  name: Sack
+  category: container
+  tags:
+  - cloth
+  - cheap
+  - large
+  - storage
+  - common
+  aliases:
+  - burlap sack
+  - bag
+- id: pouch
+  name: Pouch
+  category: container
+  tags:
+  - leather
+  - small
+  - coins
+  - compact
+  - common
+  aliases:
+  - coin purse
+  - small bag
+- id: wooden_chest
+  name: Wooden chest
+  category: container
+  tags:
+  - wood
+  - large
+  - storage
+  - sturdy
+  - common
+  aliases:
+  - chest
+  - storage chest
+- id: barrel
+  name: Barrel
+  category: container
+  tags:
+  - wood
+  - large
+  - liquid
+  - storage
+  - common
+  aliases:
+  - keg
+  - cask
+- id: quiver
+  name: Quiver
+  category: container
+  tags:
+  - leather
+  - arrows
+  - archery
+  - common
+  aliases:
+  - arrow quiver
+- id: linen_cloth
+  name: Linen cloth
+  category: material
+  tags:
+  - linen
+  - fabric
+  - light
+  - versatile
+  - common
+  aliases:
+  - linen
+  - cloth
+- id: wool_bundle
+  name: Wool bundle
+  category: material
+  tags:
+  - wool
+  - fabric
+  - warm
+  - raw
+  - common
+  aliases:
+  - raw wool
+  - fleece
+- id: leather_hide
+  name: Leather hide
+  category: material
+  tags:
+  - leather
+  - durable
+  - raw
+  - common
+  aliases:
+  - hide
+  - animal hide
+- id: iron_ingot
+  name: Iron ingot
+  category: material
+  tags:
+  - iron
+  - metal
+  - heavy
+  - forgeable
+  - common
+  aliases:
+  - iron bar
+- id: copper_ingot
+  name: Copper ingot
+  category: material
+  tags:
+  - copper
+  - metal
+  - soft
+  - forgeable
+  - common
+  aliases:
+  - copper bar
+- id: charcoal
+  name: Charcoal
+  category: material
+  tags:
+  - fuel
+  - black
+  - smoky
+  - forge
+  - common
+  - cheap
+  aliases:
+  - lump charcoal
+- id: beeswax
+  name: Beeswax
+  category: material
+  tags:
+  - wax
+  - golden
+  - craft
+  - common
+  aliases:
+  - wax
+- id: salt
+  name: Salt
+  category: material
+  tags:
+  - mineral
+  - preservative
+  - white
+  - essential
+  - common
+  aliases:
+  - rock salt
+  - salt crystals
+- id: torch
+  name: Torch
+  category: lighting
+  tags:
+  - wood
+  - fire
+  - temporary
+  - cheap
+  - common
+  aliases:
+  - burning torch
+- id: candle
+  name: Candle
+  category: lighting
+  tags:
+  - wax
+  - fire
+  - small
+  - temporary
+  - common
+  aliases:
+  - tallow candle
+  - beeswax candle
+- id: lantern
+  name: Lantern
+  category: lighting
+  tags:
+  - metal
+  - glass
+  - fire
+  - reusable
+  - common
+  aliases:
+  - oil lantern
+- id: oil_flask
+  name: Oil flask
+  category: lighting
+  tags:
+  - glass
+  - liquid
+  - fuel
+  - flammable
+  - common
+  aliases:
+  - lamp oil
+  - flask of oil
+- id: parchment
+  name: Parchment
+  category: writing
+  tags:
+  - paper
+  - thin
+  - writable
+  - perishable
+  - common
+  aliases:
+  - sheet of parchment
+  - vellum
+- id: quill
+  name: Quill
+  category: writing
+  tags:
+  - feather
+  - writing
+  - delicate
+  - common
+  aliases:
+  - ink pen
+  - goose quill
+- id: ink
+  name: Ink
+  category: writing
+  tags:
+  - liquid
+  - black
+  - writing
+  - common
+  aliases:
+  - bottle of ink
+  - inkwell
+- id: chalk
+  name: Chalk
+  category: writing
+  tags:
+  - stone
+  - white
+  - temporary
+  - cheap
+  - common
+  aliases:
+  - stick of chalk
+- id: sealing_wax
+  name: Sealing wax
+  category: writing
+  tags:
+  - wax
+  - red
+  - formal
+  - common
+  aliases:
+  - letter seal
+  - wax stick
+- id: bandages
+  name: Bandages
+  category: medical
+  tags:
+  - cloth
+  - healing
+  - wrap
+  - essential
+  - common
+  aliases:
+  - linen strips
+  - gauze
+- id: herbal_poultice
+  name: Herbal poultice
+  category: medical
+  tags:
+  - plant
+  - healing
+  - soothing
+  - common
+  aliases:
+  - medicinal herbs
+  - wound dressing
+- id: soap
+  name: Soap
+  category: medical
+  tags:
+  - cleaning
+  - fragrant
+  - hygiene
+  - common
+  aliases:
+  - bar of soap
+  - lye soap
+- id: copper_piece
+  name: Copper piece
+  category: currency
+  tags:
+  - copper
+  - money
+  - cheap
+  - common
+  - small
+  aliases:
+  - copper coin
+  - cp
+- id: silver_piece
+  name: Silver piece
+  category: currency
+  tags:
+  - silver
+  - money
+  - moderate
+  - common
+  - valuable
+  aliases:
+  - silver coin
+  - sp
+- id: gold_piece
+  name: Gold piece
+  category: currency
+  tags:
+  - gold
+  - money
+  - expensive
+  - rare
+  - valuable
+  aliases:
+  - gold coin
+  - gp
+- id: wooden_flute
+  name: Wooden flute
+  category: instrument
+  tags:
+  - wood
+  - music
+  - melodic
+  - common
+  aliases:
+  - flute
+  - pipe
+- id: lute
+  name: Lute
+  category: instrument
+  tags:
+  - wood
+  - music
+  - string
+  - melodic
+  - common
+  aliases:
+  - gittern
+- id: hand_drums
+  name: Hand drums
+  category: instrument
+  tags:
+  - wood
+  - leather
+  - music
+  - rhythmic
+  - common
+  aliases:
+  - tambour
+  - bodhran
+- id: bedroll
+  name: Bedroll
+  category: misc
+  tags:
+  - cloth
+  - sleep
+  - travel
+  - essential
+  - common
+  aliases:
+  - bedding roll
+  - sleeping roll
+- id: tent
+  name: Tent
+  category: misc
+  tags:
+  - canvas
+  - shelter
+  - travel
+  - large
+  - common
+  aliases:
+  - canvas tent
+- id: dice
+  name: Dice
+  category: misc
+  tags:
+  - bone
+  - game
+  - gambling
+  - small
+  - common
+  aliases:
+  - bone dice
+- id: mirror
+  name: Mirror
+  category: misc
+  tags:
+  - glass
+  - reflective
+  - vanity
+  - fragile
+  - common
+  aliases:
+  - hand mirror
+  - looking glass
+- id: comb
+  name: Comb
+  category: misc
+  tags:
+  - bone
+  - wood
+  - grooming
+  - small
+  - common
+  aliases:
+  - hair comb
+- id: whistle
+  name: Whistle
+  category: misc
+  tags:
+  - metal
+  - sound
+  - signal
+  - small
+  - common
+  aliases:
+  - signal whistle
